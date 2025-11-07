@@ -1,0 +1,73 @@
+// server.js
+const express = require("express");
+const dotenv = require("dotenv");
+const cors = require("cors");
+const fs = require("fs");
+const path = require("path");
+const morgan = require("morgan");
+const connectDB = require("./config/db");
+
+// ✅ Load environment variables
+dotenv.config();
+
+const app = express();
+
+// ✅ CORS Configuration
+app.use(
+  cors({
+    origin: process.env.CLIENT_URL || "http://localhost:5173",
+    methods: ["GET", "POST", "PUT", "PATCH", "DELETE"],
+    credentials: true,
+  })
+);
+
+// ✅ Morgan Logger
+// 'dev' = concise colorful logs in development
+// 'combined' = Apache-style logs (good for production)
+if (process.env.NODE_ENV === "production") {
+  app.use(morgan("combined"));
+} else {
+  app.use(morgan("dev"));
+}
+
+// ✅ Middleware
+app.use(express.json());
+app.use("/uploads", express.static(path.join(__dirname, "uploads")));
+
+// ✅ Ensure folders exist
+["uploads", "pdfs"].forEach((dir) => {
+  const dirPath = path.join(__dirname, dir);
+  if (!fs.existsSync(dirPath)) {
+    fs.mkdirSync(dirPath);
+  }
+});
+
+// ✅ Routes
+app.use("/api/quotations", require("./routes/quotationRoutes"));
+app.use("/api/user", require("./routes/userRoutes"));
+
+// ✅ Error Handler
+app.use(require("./middleware/errorHandler"));
+
+// ✅ Root route
+app.get("/", (req, res) => {
+  res.send("🚀 NodeGAN Backend with Morgan Logging is running...");
+});
+
+// ✅ Start server after DB connection
+const startServer = async () => {
+  try {
+    await connectDB();
+    console.log("✅ MongoDB connected successfully");
+
+    const PORT = process.env.PORT || 8080;
+    app.listen(PORT, () =>
+      console.log(`🚀 NodeGAN server running on port ${PORT}`)
+    );
+  } catch (error) {
+    console.error("❌ MongoDB connection failed:", error);
+    process.exit(1);
+  }
+};
+
+startServer();

@@ -1,0 +1,19 @@
+:root {
+  --gold: #b8860b;
+}
+
+.bg-gold { background-color: var(--gold); }
+.text-gold { color: var(--gold); }
+
+.input {
+  @apply w-full px-3 py-2 border rounded-md focus:outline-none focus:ring-2 focus:ring-gold;
+}
+
+.btn-primary {
+  @apply bg-gold text-white px-4 py-2 rounded hover:bg-opacity-90;
+}
+.btn-edit { @apply text-blue-600 hover:underline; }
+.btn-delete { @apply text-red-600 hover:underline; }
+.btn-pdf { @apply text-green-600 hover:underline; }
+.btn-add { @apply text-sm text-blue-600; }
+.btn-secondary { @apply bg-gray-400 text-white px-4 py-2 rounded; }
