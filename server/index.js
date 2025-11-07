@@ -12,25 +12,48 @@ dotenv.config();
 
 const app = express();
 
-// ✅ CORS Configuration
+// ✅ Allowed Origins
+const allowedOrigins = [
+  process.env.FRONTEND_URL,       // Vercel Frontend (Production)
+  process.env.PRODUCTION_URL,     // Optional second domain
+  "http://localhost:5173"         // Local Development
+].filter(Boolean);
+
+// ✅ CORS Configuration (Allow Cookies, Tokens, Sessions)
 app.use(
   cors({
-    origin: process.env.CLIENT_URL || "http://localhost:5173",
-    methods: ["GET", "POST", "PUT", "PATCH", "DELETE"],
+    origin: function (origin, callback) {
+      if (!origin || allowedOrigins.includes(origin)) {
+        callback(null, true);
+      } else {
+        callback(new Error("CORS policy violation: Origin not allowed"));
+      }
+    },
     credentials: true,
+    methods: ["GET", "POST", "PUT", "PATCH", "DELETE"],
+    allowedHeaders: ["Content-Type", "Authorization"],
   })
 );
 
+// ✅ Optional: Add custom CORS headers for extra safety
+app.use((req, res, next) => {
+  const origin = req.headers.origin;
+  if (allowedOrigins.includes(origin)) {
+    res.header("Access-Control-Allow-Origin", origin);
+  }
+  res.header("Access-Control-Allow-Methods", "GET, POST, PUT, PATCH, DELETE, OPTIONS");
+  res.header("Access-Control-Allow-Headers", "Origin, X-Requested-With, Content-Type, Accept, Authorization");
+  next();
+});
+
 // ✅ Morgan Logger
-// 'dev' = concise colorful logs in development
-// 'combined' = Apache-style logs (good for production)
 if (process.env.NODE_ENV === "production") {
   app.use(morgan("combined"));
 } else {
   app.use(morgan("dev"));
 }
 
-// ✅ Middleware
+// ✅ Express Middleware
 app.use(express.json());
 app.use("/uploads", express.static(path.join(__dirname, "uploads")));
 
@@ -51,7 +74,7 @@ app.use(require("./middleware/errorHandler"));
 
 // ✅ Root route
 app.get("/", (req, res) => {
-  res.send("🚀 NodeGAN Backend with Morgan Logging is running...");
+  res.send("🚀 NodeGAN Backend is running on Render successfully!");
 });
 
 // ✅ Start server after DB connection
@@ -62,7 +85,7 @@ const startServer = async () => {
 
     const PORT = process.env.PORT || 8080;
     app.listen(PORT, () =>
-      console.log(`🚀 NodeGAN server running on port ${PORT}`)
+      console.log(`🚀 Server live at: http://localhost:${PORT}`)
     );
   } catch (error) {
     console.error("❌ MongoDB connection failed:", error);
