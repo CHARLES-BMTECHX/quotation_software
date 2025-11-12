@@ -1,8 +1,10 @@
+// src/components/CreateQuotation.jsx
 import { useState, useEffect, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { createQuotation } from '../api/api';
 import { toast } from 'react-toastify';
-import { X, Plus, Upload, AlertCircle } from 'lucide-react';
+import { X, Plus, Upload, AlertCircle, Loader2 } from 'lucide-react';
+import { useMutation, useQueryClient } from '@tanstack/react-query';
 
 export default function CreateQuotation() {
   const [gstMode, setGstMode] = useState('global'); // 'global' or 'per-item'
@@ -19,8 +21,24 @@ export default function CreateQuotation() {
   });
 
   const [errors, setErrors] = useState({});
-  const prevCalcRef = useRef([]); // To prevent unnecessary re-renders
+  const prevCalcRef = useRef([]); // Prevent unnecessary re-renders
   const navigate = useNavigate();
+  const queryClient = useQueryClient();
+
+  // Mutation for creating quotation
+  const createMutation = useMutation({
+    mutationFn: createQuotation,
+    onSuccess: () => {
+      toast.success('Quotation created successfully!');
+      queryClient.invalidateQueries({ queryKey: ['quotations'] }); // Refetch list
+      resetForm(); // Reset form
+      navigate('/'); // Go to table
+    },
+    onError: (err) => {
+      console.error('Create quotation error:', err);
+      toast.error('Failed to create quotation');
+    },
+  });
 
   const clearError = (field) => {
     setErrors((prev) => {
@@ -30,7 +48,7 @@ export default function CreateQuotation() {
     });
   };
 
-  // Auto-calculate GST & Amount — ONLY if values actually change
+  // Auto-calculate GST & Amount
   useEffect(() => {
     const newItems = form.items.map((it) => {
       const qty = it.quantity || 0;
@@ -48,7 +66,6 @@ export default function CreateQuotation() {
       };
     });
 
-    // Compare only calculated fields to avoid infinite loop
     const shouldUpdate = newItems.some((item, i) => {
       const prev = prevCalcRef.current[i];
       return (
@@ -60,7 +77,6 @@ export default function CreateQuotation() {
     }) || newItems.length !== prevCalcRef.current.length;
 
     if (shouldUpdate) {
-      // Update ref with minimal data for comparison
       prevCalcRef.current = newItems.map(({ gstAmount, amount, gstPercent }) => ({
         gstAmount,
         amount,
@@ -68,7 +84,6 @@ export default function CreateQuotation() {
       }));
       setForm((prev) => ({ ...prev, items: newItems }));
     } else {
-      // Keep ref in sync even if no update
       prevCalcRef.current = newItems.map(({ gstAmount, amount, gstPercent }) => ({
         gstAmount,
         amount,
@@ -141,7 +156,24 @@ export default function CreateQuotation() {
     return Object.keys(newErrors).length === 0;
   };
 
-  const handleSubmit = async (e) => {
+  // Reset form to initial state
+  const resetForm = () => {
+    setForm({
+      modelName: '',
+      validity: '',
+      phoneNumber: '',
+      storeName: '',
+      logo: null,
+      items: [
+        { productDescription: '', quantity: 1, rate: 0, gstPercent: 18, gstAmount: 0, amount: 0 },
+      ],
+    });
+    setGlobalGst(18);
+    setGstMode('global');
+    setErrors({});
+  };
+
+  const handleSubmit = (e) => {
     e.preventDefault();
     if (!validate()) {
       toast.error("Please fix the errors below");
@@ -169,13 +201,7 @@ export default function CreateQuotation() {
 
     if (form.logo) formData.append('logo', form.logo);
 
-    try {
-      await createQuotation(formData);
-      toast.success("Quotation created successfully!");
-      navigate('/');
-    } catch (err) {
-      toast.error("Failed to create quotation");
-    }
+    createMutation.mutate(formData);
   };
 
   const grandTotal = form.items.reduce((sum, it) => sum + it.amount, 0).toFixed(2);
@@ -324,7 +350,7 @@ export default function CreateQuotation() {
                 key={i}
                 className="grid grid-cols-1 sm:grid-cols-12 gap-3 sm:gap-2 items-start sm:items-center mb-4 border-b border-gray-100 pb-4 px-4 sm:px-0"
               >
-                {/* Mobile */}
+                {/* Mobile Description */}
                 <div className="sm:hidden space-y-2">
                   <label className="text-xs font-medium text-gray-600">Description *</label>
                   <input
@@ -354,8 +380,7 @@ export default function CreateQuotation() {
                   <div className="sm:hidden"><label className="text-xs font-medium text-gray-600">Qty *</label></div>
                   <input
                     name="quantity"
-                    type="number"
-                    min="1"
+                    type="text"
                     value={item.quantity}
                     onChange={(e) => handleItemChange(i, e)}
                     className={`w-full text-center border ${errors[`qty_${i}`] ? 'border-red-500' : 'border-gray-300'} rounded-lg px-2 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-yellow-500`}
@@ -368,9 +393,7 @@ export default function CreateQuotation() {
                   <div className="sm:hidden"><label className="text-xs font-medium text-gray-600">Rate *</label></div>
                   <input
                     name="rate"
-                    type="number"
-                    min="0"
-                    step="0.01"
+                    type="text"
                     value={item.rate}
                     onChange={(e) => handleItemChange(i, e)}
                     className={`w-full text-center border ${errors[`rate_${i}`] ? 'border-red-500' : 'border-gray-300'} rounded-lg px-2 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-yellow-500`}
@@ -395,14 +418,14 @@ export default function CreateQuotation() {
                   </div>
                 )}
 
-                {/* GST Amount */}
+                {/* GST Amount (Desktop) */}
                 <input
                   value={item.gstAmount.toFixed(2)}
                   disabled
                   className="hidden sm:block col-span-2 text-center border border-gray-200 rounded-lg px-2 py-2 bg-gray-50 text-xs sm:text-sm text-gray-700"
                 />
 
-                {/* Amount */}
+                {/* Amount (Desktop) */}
                 <input
                   value={item.amount.toFixed(2)}
                   disabled
@@ -419,7 +442,7 @@ export default function CreateQuotation() {
                   </div>
                 </div>
 
-                {/* Remove */}
+                {/* Remove Button */}
                 <button
                   type="button"
                   onClick={() => removeItem(i)}
@@ -450,13 +473,21 @@ export default function CreateQuotation() {
           </div>
         </div>
 
-        {/* Buttons */}
+        {/* Submit & Cancel Buttons */}
         <div className="flex flex-col sm:flex-row gap-3 sm:gap-4 justify-end mt-8">
           <button
             type="submit"
-            className="bg-yellow-600 hover:bg-yellow-700 text-white px-6 sm:px-8 py-3 rounded-xl font-semibold shadow-md transition-all cursor-pointer flex items-center justify-center gap-2 text-sm sm:text-base"
+            disabled={createMutation.isPending}
+            className="bg-yellow-600 hover:bg-yellow-700 text-white px-6 sm:px-8 py-3 rounded-xl font-semibold shadow-md transition-all cursor-pointer flex items-center justify-center gap-2 text-sm sm:text-base disabled:opacity-70 disabled:cursor-not-allowed"
           >
-            Save & Generate PDF
+            {createMutation.isPending ? (
+              <>
+                <Loader2 className="animate-spin" size={20} />
+                Saving...
+              </>
+            ) : (
+              'Save & Generate PDF'
+            )}
           </button>
           <button
             type="button"

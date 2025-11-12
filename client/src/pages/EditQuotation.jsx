@@ -1,12 +1,15 @@
+// src/components/EditQuotation.jsx
 import { useState, useEffect, useRef } from "react";
 import { useParams, useNavigate } from "react-router-dom";
 import { fetchQuotation, updateQuotation } from "../api/api";
 import { toast } from "react-toastify";
-import { X, Plus, Upload, AlertCircle } from "lucide-react";
+import { X, Plus, Upload, AlertCircle, Loader2 } from "lucide-react";
+import { useMutation, useQueryClient } from "@tanstack/react-query";
 
 export default function EditQuotation() {
   const { id } = useParams();
   const navigate = useNavigate();
+  const queryClient = useQueryClient();
 
   const [gstMode, setGstMode] = useState("global");
   const [globalGst, setGlobalGst] = useState(18);
@@ -22,11 +25,24 @@ export default function EditQuotation() {
   });
   const [logoPreview, setLogoPreview] = useState(null);
   const [errors, setErrors] = useState({});
+  const [isLoadingData, setIsLoadingData] = useState(true);
 
-  // Use ref to track previous values for comparison
   const prevStateRef = useRef({ items: [], globalGst: 18, gstMode: "global" });
 
-  // Auto-clear error
+  // Mutation for updating quotation
+  const updateMutation = useMutation({
+    mutationFn: (formData) => updateQuotation(id, formData),
+    onSuccess: () => {
+      toast.success("Quotation updated successfully!");
+      queryClient.invalidateQueries({ queryKey: ["quotations"] }); // Auto-refresh list
+      navigate("/");
+    },
+    onError: (err) => {
+      console.error(err);
+      toast.error("Failed to update quotation");
+    },
+  });
+
   const clearError = (field) => {
     setErrors((prev) => {
       const newErrors = { ...prev };
@@ -35,19 +51,19 @@ export default function EditQuotation() {
     });
   };
 
-  // -----------------------------------------------------------------
-  // 1. Load Quotation
-  // -----------------------------------------------------------------
+  // Load Quotation
   useEffect(() => {
+    setIsLoadingData(true);
     fetchQuotation(id)
       .then((res) => {
         const data = res.data.data;
 
         const loadedItems = (data.items || []).map((it) => {
           const taxable = it.quantity * it.rate;
-          const gstPercentFromAmount = taxable > 0 
-            ? ((it.gstAmount / taxable) * 100).toFixed(2)
-            : data.gstPercent || 18;
+          const gstPercentFromAmount =
+            taxable > 0
+              ? ((it.gstAmount / taxable) * 100).toFixed(2)
+              : data.gstPercent || 18;
 
           return {
             productDescription: it.productDescription || "",
@@ -71,21 +87,23 @@ export default function EditQuotation() {
       .catch(() => {
         toast.error("Failed to load quotation");
         navigate("/");
-      });
+      })
+      .finally(() => setIsLoadingData(false));
   }, [id, navigate]);
 
-  // -----------------------------------------------------------------
-  // 2. Recalculate GST & Amount (Only when needed)
-  // -----------------------------------------------------------------
+  // Recalculate GST & Amount
   useEffect(() => {
     const current = {
-      items: form.items.map(i => ({ quantity: i.quantity, rate: i.rate, gstPercent: i.gstPercent })),
+      items: form.items.map((i) => ({
+        quantity: i.quantity,
+        rate: i.rate,
+        gstPercent: i.gstPercent,
+      })),
       globalGst,
       gstMode,
     };
 
     const prev = prevStateRef.current;
-
     const itemsChanged = JSON.stringify(current.items) !== JSON.stringify(prev.items);
     const gstChanged = current.globalGst !== prev.globalGst || current.gstMode !== prev.gstMode;
 
@@ -95,7 +113,6 @@ export default function EditQuotation() {
       const qty = it.quantity || 0;
       const rate = it.rate || 0;
       const taxable = qty * rate;
-
       const gstPercent = gstMode === "per-item" ? (it.gstPercent || 0) : globalGst;
       const gst = (taxable * gstPercent) / 100;
       const amount = taxable + gst;
@@ -112,9 +129,6 @@ export default function EditQuotation() {
     prevStateRef.current = current;
   }, [form.items, globalGst, gstMode]);
 
-  // -----------------------------------------------------------------
-  // 3. Handlers
-  // -----------------------------------------------------------------
   const handleItemChange = (idx, e) => {
     const { name, value } = e.target;
     const numeric = ["quantity", "rate", "gstPercent"].includes(name) ? Number(value) || 0 : value;
@@ -169,9 +183,6 @@ export default function EditQuotation() {
     }
   };
 
-  // -----------------------------------------------------------------
-  // 4. Validation
-  // -----------------------------------------------------------------
   const validate = () => {
     const newErrors = {};
 
@@ -191,7 +202,7 @@ export default function EditQuotation() {
     return Object.keys(newErrors).length === 0;
   };
 
-  const handleSubmit = async (e) => {
+  const handleSubmit = (e) => {
     e.preventDefault();
     if (!validate()) {
       toast.error("Please fix the errors below");
@@ -219,20 +230,23 @@ export default function EditQuotation() {
 
     if (form.logo) formData.append("logo", form.logo);
 
-    try {
-      await updateQuotation(id, formData);
-      toast.success("Quotation updated successfully!");
-      navigate("/");
-    } catch (err) {
-      toast.error("Failed to update quotation");
-    }
+    updateMutation.mutate(formData);
   };
 
   const grandTotal = form.items.reduce((s, it) => s + it.amount, 0).toFixed(2);
 
-  // -----------------------------------------------------------------
-  // 5. Render
-  // -----------------------------------------------------------------
+  // Show loading while fetching initial data
+  if (isLoadingData) {
+    return (
+      <div className="max-w-5xl mx-auto bg-white rounded-2xl shadow-xl p-10 my-10 border border-yellow-100">
+        <div className="flex flex-col items-center justify-center space-y-4">
+          <Loader2 className="animate-spin text-yellow-600" size={48} />
+          <p className="text-lg font-medium text-gray-700">Loading quotation...</p>
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div className="max-w-5xl mx-auto bg-white rounded-2xl shadow-xl p-4 sm:p-6 md:p-8 lg:p-10 my-6 md:my-10 border border-yellow-100">
       <h2 className="text-2xl sm:text-3xl font-bold mb-6 sm:mb-8 text-center text-yellow-600 flex items-center justify-center gap-2">
@@ -360,7 +374,7 @@ export default function EditQuotation() {
           )}
         </div>
 
-        {/* Items */}
+        {/* Items Table */}
         <div className="overflow-x-auto -mx-4 sm:mx-0">
           <div className="min-w-full sm:min-w-0">
             <h3 className="text-lg font-semibold mb-3 text-gray-800 px-4 sm:px-0">Quotation Items</h3>
@@ -423,7 +437,7 @@ export default function EditQuotation() {
                   <div className="sm:hidden"><label className="text-xs font-medium text-gray-600">Rate *</label></div>
                   <input
                     name="rate"
-                    type="number"
+                    type="text"
                     min="0"
                     step="0.01"
                     value={item.rate}
@@ -439,7 +453,7 @@ export default function EditQuotation() {
                     <div className="sm:hidden"><label className="text-xs font-medium text-gray-600">GST %</label></div>
                     <input
                       name="gstPercent"
-                      type="number"
+                      type="text"
                       min="0"
                       step="0.01"
                       value={item.gstPercent}
@@ -509,9 +523,17 @@ export default function EditQuotation() {
         <div className="flex flex-col sm:flex-row gap-3 sm:gap-4 justify-end mt-8">
           <button
             type="submit"
-            className="bg-yellow-600 hover:bg-yellow-700 text-white px-6 sm:px-8 py-3 rounded-xl font-semibold shadow-md transition-all cursor-pointer flex items-center justify-center gap-2 text-sm sm:text-base"
+            disabled={updateMutation.isPending}
+            className="bg-yellow-600 hover:bg-yellow-700 text-white px-6 sm:px-8 py-3 rounded-xl font-semibold shadow-md transition-all cursor-pointer flex items-center justify-center gap-2 text-sm sm:text-base disabled:opacity-70 disabled:cursor-not-allowed"
           >
-            Update Quotation
+            {updateMutation.isPending ? (
+              <>
+                <Loader2 className="animate-spin" size={20} />
+                Updating...
+              </>
+            ) : (
+              "Update Quotation"
+            )}
           </button>
           <button
             type="button"
